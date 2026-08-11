@@ -1,0 +1,42 @@
+[project]
+name = "kvbridge"
+version = "0.1.0"
+description = "Cross-model KV cache transfer for LLM families: prefill with a small model, generate with a big one"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Siddharth Potta" }]
+keywords = ["llm", "kv-cache", "inference", "transformers", "prefill"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.3",
+    "transformers>=4.51,<5",
+    "safetensors>=0.4",
+    "huggingface-hub>=0.23",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sidd03192/kvbridge"
+Repository = "https://github.com/Sidd03192/kvbridge"
+Paper = "https://arxiv.org/abs/2608.03893"
+
+[project.optional-dependencies]
+fit = ["datasets>=2.19", "accelerate>=0.30"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kvbridge"]
+
+[tool.pytest.ini_options]
+markers = ["integration: needs model downloads and real hardware; deselected by default"]
+addopts = "-m 'not integration'"

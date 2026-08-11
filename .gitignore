@@ -1,0 +1,19 @@
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+.venv
+.venv-local
+
+# Fitted mappers are GBs; download them from the Hub or refit.
+mappers/
+bench_out/
+
+# Never publish the working notes or scratch revisions of the POC
+plan/
+*_backup.py
+paper.md
+*.pdf

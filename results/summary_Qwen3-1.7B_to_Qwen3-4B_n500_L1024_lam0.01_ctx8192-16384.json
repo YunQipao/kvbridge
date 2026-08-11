@@ -1,0 +1,575 @@
+{
+  "source": "Qwen/Qwen3-1.7B",
+  "target": "Qwen/Qwen3-4B",
+  "n_calib": 500,
+  "seq_len": 1024,
+  "lam": 0.01,
+  "gpu": "A100",
+  "ks": [
+    4,
+    8,
+    12,
+    16,
+    20,
+    24
+  ],
+  "n_heldout": 48,
+  "contexts": [
+    8192,
+    16384
+  ],
+  "results": {
+    "4": {
+      "k": 4,
+      "fit": {
+        "r2_k": 0.7696026625427906,
+        "r2_v": 0.6456934314852172,
+        "seconds": 56.397236824035645
+      },
+      "quality": {
+        "8192": {
+          "mapped": 2.907438730200132,
+          "real": 2.554117277264595,
+          "none": 3.07950122654438,
+          "benefit_retained": 0.3274985780972518,
+          "n": 48,
+          "ppl": {
+            "mapped": 18.309842013097672,
+            "real": 12.85994288185971,
+            "none": 21.747552588668086
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        },
+        "16384": {
+          "mapped": 2.9694270913799605,
+          "real": 2.5584632654984794,
+          "none": 3.103379880388578,
+          "benefit_retained": 0.2458225448597005,
+          "n": 48,
+          "ppl": {
+            "mapped": 19.480755705523343,
+            "real": 12.915953665256362,
+            "none": 22.273104634773496
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        }
+      },
+      "qa": {
+        "mapped": 2,
+        "real": 4,
+        "none": 0,
+        "n": 4
+      }
+    },
+    "8": {
+      "k": 8,
+      "fit": {
+        "r2_k": 0.797182293606344,
+        "r2_v": 0.691910817682039,
+        "seconds": 217.89684414863586
+      },
+      "quality": {
+        "8192": {
+          "mapped": 2.7852100183566413,
+          "real": 2.554117277264595,
+          "none": 3.07950122654438,
+          "benefit_retained": 0.5601450302986295,
+          "n": 48,
+          "ppl": {
+            "mapped": 16.20322049318447,
+            "real": 12.85994288185971,
+            "none": 21.747552588668086
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        },
+        "16384": {
+          "mapped": 2.839544249077638,
+          "real": 2.5584632654984794,
+          "none": 3.103379880388578,
+          "benefit_retained": 0.4841761548492175,
+          "n": 48,
+          "ppl": {
+            "mapped": 17.10796678849383,
+            "real": 12.915953665256362,
+            "none": 22.273104634773496
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        }
+      },
+      "qa": {
+        "mapped": 4,
+        "real": 4,
+        "none": 0,
+        "n": 4
+      }
+    },
+    "12": {
+      "k": 12,
+      "fit": {
+        "r2_k": 0.8131740813942909,
+        "r2_v": 0.7175586727311307,
+        "seconds": 540.9416913986206
+      },
+      "quality": {
+        "8192": {
+          "mapped": 2.738663407663504,
+          "real": 2.554117277264595,
+          "none": 3.07950122654438,
+          "benefit_retained": 0.648740448481741,
+          "n": 48,
+          "ppl": {
+            "mapped": 15.466299138170907,
+            "real": 12.85994288185971,
+            "none": 21.747552588668086
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        },
+        "16384": {
+          "mapped": 2.7882313057780266,
+          "real": 2.5584632654984794,
+          "none": 3.103379880388578,
+          "benefit_retained": 0.5783427518981267,
+          "n": 48,
+          "ppl": {
+            "mapped": 16.25224910691829,
+            "real": 12.915953665256362,
+            "none": 22.273104634773496
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        }
+      },
+      "qa": {
+        "mapped": 4,
+        "real": 4,
+        "none": 0,
+        "n": 4
+      }
+    },
+    "16": {
+      "k": 16,
+      "fit": {
+        "r2_k": 0.8247259052808461,
+        "r2_v": 0.7365277522398552,
+        "seconds": 1070.0682604312897
+      },
+      "quality": {
+        "8192": {
+          "mapped": 2.7214855973919234,
+          "real": 2.554117277264595,
+          "none": 3.07950122654438,
+          "benefit_retained": 0.681436175663983,
+          "n": 48,
+          "ppl": {
+            "mapped": 15.202890851870603,
+            "real": 12.85994288185971,
+            "none": 21.747552588668086
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        },
+        "16384": {
+          "mapped": 2.768274649977684,
+          "real": 2.5584632654984794,
+          "none": 3.103379880388578,
+          "benefit_retained": 0.6149660723383881,
+          "n": 48,
+          "ppl": {
+            "mapped": 15.931123519685968,
+            "real": 12.915953665256362,
+            "none": 22.273104634773496
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        }
+      },
+      "qa": {
+        "mapped": 4,
+        "real": 4,
+        "none": 0,
+        "n": 4
+      }
+    },
+    "20": {
+      "k": 20,
+      "fit": {
+        "r2_k": 0.8348825971270799,
+        "r2_v": 0.7530736696176198,
+        "seconds": 1862.8848149776459
+      },
+      "quality": {
+        "8192": {
+          "mapped": 2.7106195936600366,
+          "real": 2.554117277264595,
+          "none": 3.07950122654438,
+          "benefit_retained": 0.7021182002039071,
+          "n": 48,
+          "ppl": {
+            "mapped": 15.038590444136922,
+            "real": 12.85994288185971,
+            "none": 21.747552588668086
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        },
+        "16384": {
+          "mapped": 2.7523089746634164,
+          "real": 2.5584632654984794,
+          "none": 3.103379880388578,
+          "benefit_retained": 0.6442653722275787,
+          "n": 48,
+          "ppl": {
+            "mapped": 15.678792055272089,
+            "real": 12.915953665256362,
+            "none": 22.273104634773496
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        }
+      },
+      "qa": {
+        "mapped": 4,
+        "real": 4,
+        "none": 0,
+        "n": 4
+      }
+    },
+    "24": {
+      "k": 24,
+      "fit": {
+        "r2_k": 0.8438014541696103,
+        "r2_v": 0.7663396882160899,
+        "seconds": 2934.323729991913
+      },
+      "quality": {
+        "8192": {
+          "mapped": 2.7053023303548493,
+          "real": 2.554117277264595,
+          "none": 3.07950122654438,
+          "benefit_retained": 0.7122389191799557,
+          "n": 48,
+          "ppl": {
+            "mapped": 14.958838517906022,
+            "real": 12.85994288185971,
+            "none": 21.747552588668086
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        },
+        "16384": {
+          "mapped": 2.745667539536953,
+          "real": 2.5584632654984794,
+          "none": 3.103379880388578,
+          "benefit_retained": 0.6564533564897266,
+          "n": 48,
+          "ppl": {
+            "mapped": 15.575007395999775,
+            "real": 12.915953665256362,
+            "none": 22.273104634773496
+          },
+          "attn_cosine": NaN,
+          "attn_cosine_by_position": []
+        }
+      },
+      "qa": {
+        "mapped": 4,
+        "real": 4,
+        "none": 0,
+        "n": 4
+      }
+    }
+  },
+  "timing": {
+    "8192": {
+      "source_prefill": 0.24970829400000127,
+      "target_prefill": 0.5446827359999986,
+      "mapping": {
+        "4": 0.08186313699999914,
+        "8": 0.1198722120000042,
+        "12": 0.15761462000000392,
+        "16": 0.1840180889999914,
+        "20": 0.21919436700000006,
+        "24": 0.25389917000001105
+      }
+    },
+    "16384": {
+      "source_prefill": 0.5675425050000058,
+      "target_prefill": 1.2699271320000065,
+      "mapping": {
+        "4": 0.15086856300000306,
+        "8": 0.22026479999999538,
+        "12": 0.2895728649999967,
+        "16": 0.3631827039999962,
+        "20": 0.4339316159999953,
+        "24": 0.5039932359999852
+      }
+    }
+  },
+  "bench": {
+    "baseline_target": {
+      "model": "Qwen/Qwen3-4B",
+      "mc": {
+        "hellaswag": {
+          "acc": 0.5295,
+          "acc_norm": 0.6865,
+          "n": 2000,
+          "metric": "acc_norm",
+          "floor": 0.25
+        },
+        "arc_challenge": {
+          "acc": 0.5068259385665529,
+          "acc_norm": 0.5392491467576792,
+          "n": 1172,
+          "metric": "acc_norm",
+          "floor": 0.25
+        },
+        "mmlu": {
+          "acc": 0.692,
+          "acc_norm": 0.692,
+          "n": 2000,
+          "metric": "acc",
+          "floor": 0.25
+        }
+      },
+      "wikitext": {
+        "ppl": 11.5878373892489,
+        "n_chunks": 145,
+        "prefix_len": 1024
+      },
+      "n_samples": 2000
+    },
+    "baseline_source": {
+      "model": "Qwen/Qwen3-1.7B",
+      "mc": {
+        "hellaswag": {
+          "acc": 0.465,
+          "acc_norm": 0.602,
+          "n": 2000,
+          "metric": "acc_norm",
+          "floor": 0.25
+        },
+        "arc_challenge": {
+          "acc": 0.39761092150170646,
+          "acc_norm": 0.42918088737201365,
+          "n": 1172,
+          "metric": "acc_norm",
+          "floor": 0.25
+        },
+        "mmlu": {
+          "acc": 0.6075,
+          "acc_norm": 0.6075,
+          "n": 2000,
+          "metric": "acc",
+          "floor": 0.25
+        }
+      },
+      "wikitext": {
+        "ppl": 14.76826494941909,
+        "n_chunks": 145,
+        "prefix_len": 1024
+      },
+      "n_samples": 2000
+    },
+    "per_k": {
+      "4": {
+        "k": 4,
+        "mc": {
+          "hellaswag": {
+            "acc": 0.471,
+            "acc_norm": 0.608,
+            "n": 2000,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "arc_challenge": {
+            "acc": 0.3728668941979522,
+            "acc_norm": 0.41552901023890787,
+            "n": 1172,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "mmlu": {
+            "acc": 0.551,
+            "acc_norm": 0.551,
+            "n": 2000,
+            "metric": "acc",
+            "floor": 0.25
+          }
+        },
+        "wikitext": {
+          "ppl": 15.659777514607878,
+          "n_chunks": 145,
+          "prefix_len": 1024
+        },
+        "n_samples": 2000
+      },
+      "8": {
+        "k": 8,
+        "mc": {
+          "hellaswag": {
+            "acc": 0.481,
+            "acc_norm": 0.6265,
+            "n": 2000,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "arc_challenge": {
+            "acc": 0.3796928327645051,
+            "acc_norm": 0.4274744027303754,
+            "n": 1172,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "mmlu": {
+            "acc": 0.552,
+            "acc_norm": 0.552,
+            "n": 2000,
+            "metric": "acc",
+            "floor": 0.25
+          }
+        },
+        "wikitext": {
+          "ppl": 13.781410230190243,
+          "n_chunks": 145,
+          "prefix_len": 1024
+        },
+        "n_samples": 2000
+      },
+      "12": {
+        "k": 12,
+        "mc": {
+          "hellaswag": {
+            "acc": 0.482,
+            "acc_norm": 0.6335,
+            "n": 2000,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "arc_challenge": {
+            "acc": 0.3720136518771331,
+            "acc_norm": 0.4274744027303754,
+            "n": 1172,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "mmlu": {
+            "acc": 0.551,
+            "acc_norm": 0.551,
+            "n": 2000,
+            "metric": "acc",
+            "floor": 0.25
+          }
+        },
+        "wikitext": {
+          "ppl": 13.253999211364336,
+          "n_chunks": 145,
+          "prefix_len": 1024
+        },
+        "n_samples": 2000
+      },
+      "16": {
+        "k": 16,
+        "mc": {
+          "hellaswag": {
+            "acc": 0.483,
+            "acc_norm": 0.633,
+            "n": 2000,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "arc_challenge": {
+            "acc": 0.371160409556314,
+            "acc_norm": 0.42406143344709896,
+            "n": 1172,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "mmlu": {
+            "acc": 0.5455,
+            "acc_norm": 0.5455,
+            "n": 2000,
+            "metric": "acc",
+            "floor": 0.25
+          }
+        },
+        "wikitext": {
+          "ppl": 13.10147085172737,
+          "n_chunks": 145,
+          "prefix_len": 1024
+        },
+        "n_samples": 2000
+      },
+      "20": {
+        "k": 20,
+        "mc": {
+          "hellaswag": {
+            "acc": 0.486,
+            "acc_norm": 0.636,
+            "n": 2000,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "arc_challenge": {
+            "acc": 0.38310580204778155,
+            "acc_norm": 0.42150170648464164,
+            "n": 1172,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "mmlu": {
+            "acc": 0.5405,
+            "acc_norm": 0.5405,
+            "n": 2000,
+            "metric": "acc",
+            "floor": 0.25
+          }
+        },
+        "wikitext": {
+          "ppl": 12.970501585784087,
+          "n_chunks": 145,
+          "prefix_len": 1024
+        },
+        "n_samples": 2000
+      },
+      "24": {
+        "k": 24,
+        "mc": {
+          "hellaswag": {
+            "acc": 0.487,
+            "acc_norm": 0.639,
+            "n": 2000,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "arc_challenge": {
+            "acc": 0.38310580204778155,
+            "acc_norm": 0.4274744027303754,
+            "n": 1172,
+            "metric": "acc_norm",
+            "floor": 0.25
+          },
+          "mmlu": {
+            "acc": 0.5415,
+            "acc_norm": 0.5415,
+            "n": 2000,
+            "metric": "acc",
+            "floor": 0.25
+          }
+        },
+        "wikitext": {
+          "ppl": 12.894842901717938,
+          "n_chunks": 145,
+          "prefix_len": 1024
+        },
+        "n_samples": 2000
+      }
+    },
+    "selected_k": 12,
+    "n_samples": 2000
+  }
+}

@@ -1,4 +1,4 @@
-# kvbridge — transfer context between models, without the prefill
+# kvbridge — transfer context between models, without prefill!
 
 [![tests](https://github.com/Sidd03192/kvbridge/actions/workflows/tests.yml/badge.svg)](https://github.com/Sidd03192/kvbridge/actions/workflows/tests.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

@@ -28,10 +28,9 @@ def _cos(a, b, dim=-1):
     return torch.nn.functional.cosine_similarity(a.float(), b.float(), dim=dim)
 
 
-def _bucketize(values, positions, n_buckets):
-    """Mean of `values` (per position) grouped into n_buckets by position."""
-    T = positions
-    edges = [round(i * T / n_buckets) for i in range(n_buckets + 1)]
+def _bucketize(values, n_positions, n_buckets):
+    """Mean of `values` (one per position) over n_buckets position ranges."""
+    edges = [round(i * n_positions / n_buckets) for i in range(n_buckets + 1)]
     return [float(values[edges[i]:edges[i + 1]].mean()) if edges[i + 1] > edges[i]
             else float("nan") for i in range(n_buckets)]
 

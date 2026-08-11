@@ -127,6 +127,7 @@ def kv_retrieval(tok, n_ctx=2048, n_samples=32, n_depths=8, n_options=4,
     header = "Extract the value corresponding to the specified key in the JSON object below.\n\n"
     pair_tokens = len(tok(f'  "{_uuid(rng)}": "{_uuid(rng)}",\n',
                           add_special_tokens=False).input_ids)
+    # 32 tokens reserved for the instruction header and the JSON braces
     n_pairs = max(n_options + 1, (n_ctx - 32) // max(1, pair_tokens))
 
     samples = []

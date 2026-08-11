@@ -26,6 +26,8 @@ def build_cos_sin(positions, head_dim, rope_theta, device, dtype):
         rope_theta ** (torch.arange(0, head_dim, 2, device=device, dtype=torch.float32) / head_dim)
     )
     angles = positions.to(device=device, dtype=torch.float32)[:, None] * inv_freq[None, :]
+    # angles cover d/2 frequencies; repeating them over both halves matches
+    # the rotate_half convention transformers uses
     cos = torch.cat([angles.cos(), angles.cos()], dim=-1).to(dtype)
     sin = torch.cat([angles.sin(), angles.sin()], dim=-1).to(dtype)
     return cos, sin

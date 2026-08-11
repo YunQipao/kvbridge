@@ -14,10 +14,12 @@ local millisecond.
 ## Setup
 
 ```bash
-uv venv --python 3.12 .venv-local
-uv pip install --python .venv-local/bin/python torch transformers safetensors huggingface-hub accelerate datasets
-uv pip install --python .venv-local/bin/python -e kvbridge
+pip install -e .        # from the repo root; add `datasets` only for FineWeb fitting
 ```
+
+Tasks are synthetic and deterministic under a seed -- no dataset downloads, so
+a Mac runs the same benchmark a CUDA box does, byte for byte. Only the model
+weights (and a mapper, if you don't fit one) come from the network.
 
 ## Fit a mapper locally
 

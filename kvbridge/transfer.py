@@ -60,6 +60,7 @@ def transfer(cache, mapper, positions=None):
     for tl, entry in enumerate(mapper.layers):
         chosen = entry["source_layers"]
         Xk = torch.cat([src_K[sl] for sl in chosen], dim=-1)
+        # centered affine map: (x - mu_x) @ W + mu_y
         Yk = torch.addmm(entry["mu_yk"], Xk - entry["mu_xk"], entry["W_k"])
         Xv = torch.cat([src_V[sl] for sl in chosen], dim=-1)
         Yv = torch.addmm(entry["mu_yv"], Xv - entry["mu_xv"], entry["W_v"])

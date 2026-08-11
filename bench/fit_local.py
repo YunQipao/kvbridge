@@ -43,10 +43,9 @@ def conditioning(source, n_calib, seq_len, stride, top_k):
 
     Each target layer regresses H*d outputs on `top_k` source layers' worth of
     features, so the design is [n_obs, top_k * H * d]. When n_obs is not
-    comfortably larger than that width the ridge interpolates and the reported
-    in-sample R^2 goes to ~1.0 while the mapper is worthless -- the single
-    easiest way to waste a day on this codebase. The Modal protocol
-    (n_calib=500, top_k=12) sits at ~10 rows per parameter.
+    comfortably larger than that width the ridge interpolates: the reported
+    in-sample R^2 goes to ~1.0 while the mapper transfers nothing. The
+    published fit (n_calib=500, top_k=12) sits at ~10 rows per parameter.
     """
     cfg = AutoConfig.from_pretrained(source)
     n_obs = n_calib * (seq_len // stride)

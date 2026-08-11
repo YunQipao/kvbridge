@@ -116,7 +116,7 @@ class Mapper:
                              f"(this kvbridge reads version {cls.FORMAT_VERSION})")
         tensors = load_file(str(safetensors_path), device=str(device))
         layers = []
-        for i, source_layers in enumerate(meta["n_target_layers"] * [None]):
+        for i in range(meta["n_target_layers"]):
             entry = {"source_layers": list(meta["source_layers"][i])}
             for key in TENSOR_KEYS:
                 t = tensors[f"layer_{i:02d}.{key}"]

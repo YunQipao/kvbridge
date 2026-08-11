@@ -538,8 +538,8 @@ def attention_output_cosine(model, ids, mapped_cache, real_cache, positions,
     rep = n_q_heads // n_kv_heads
     T = positions.shape[0]
 
-    # Capture each layer's query projection output (post-norm, post-RoPE queries
-    # are what attention actually uses, so we recompute RoPE on them here).
+    # Capture each layer's query projection output; attention consumes
+    # post-RoPE queries, so RoPE is reapplied to the captures below.
     queries = {}
 
     def make_hook(idx):
@@ -590,6 +590,8 @@ def attention_output_cosine(model, ids, mapped_cache, real_cache, positions,
                 for kk, vv in ((k_m, v_m), (k_r, v_r)):
                     kc = kk[0, kv0:kv1].float().repeat_interleave(rep, dim=0)
                     vc = vv[0, kv0:kv1].float().repeat_interleave(rep, dim=0)
+                    # expansion covers whole KV groups; trim to the exact
+                    # query-head range of this chunk
                     off = h0 - kv0 * rep
                     kc = kc[off:off + (h1 - h0)]
                     vc = vc[off:off + (h1 - h0)]
@@ -1191,6 +1193,8 @@ def score_mc_suite(model, tok, bench_data, make_cache, device, tag=""):
             ctx = torch.tensor(item["ctx"], dtype=torch.long, device=device)
             cache = make_cache(ctx[:-1])
             past = ctx.shape[0] - 1
+            # cache holds ctx[:-1], so each row starts with the last context
+            # token and every continuation token (even the first) gets a logit
             rows = [[item["ctx"][-1]] + c[:-1] for c in item["conts"]]
             B, L = len(rows), max(len(r) for r in rows)
             inp = torch.full((B, L), pad_id, dtype=torch.long, device=device)

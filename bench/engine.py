@@ -23,10 +23,6 @@ from kvbridge.mapper import Mapper
 from kvbridge.transfer import transfer
 
 
-# -----------------------------------------------------------------------------
-# device / dtype
-# -----------------------------------------------------------------------------
-
 def default_device():
     if torch.cuda.is_available():
         return "cuda"
@@ -40,10 +36,6 @@ def default_dtype(device):
     return torch.float32 if device == "cpu" else torch.bfloat16
 
 
-# -----------------------------------------------------------------------------
-# DynamicCache surgery (version-independent: we only ever read via
-# cache_layer_kv and write via update on a fresh cache)
-# -----------------------------------------------------------------------------
 
 def cache_len(cache):
     return cache_layer_kv(cache, 0)[0].shape[2]
@@ -156,9 +148,6 @@ def parse_strategy(spec):
     return Strategy(kind, params)
 
 
-# -----------------------------------------------------------------------------
-# engine
-# -----------------------------------------------------------------------------
 
 class Engine:
     """Holds the two models plus a mapper, and turns strategies into caches.
@@ -247,12 +236,13 @@ class Engine:
         if kind == "hybrid":
             sink = int(p.get("sink", 0))
             window = int(p.get("window", 0))
+            # clamp so sink / middle / window partition [0, T) even when the
+            # requested regions overlap or exceed the context
             sink = max(0, min(sink, T))
             window = max(0, min(window, T - sink))
             mid_end = T - window
-            # The source reads the whole prompt either way -- that is the
-            # product. We simply decline to use its mapping for the two
-            # regions the target can afford to compute exactly.
+            # the source still prefills the whole prompt (the deployment
+            # shape); only its mapping is skipped where the target prefills
             src_cache = self.prefill(self.source, ctx_ids)[0]
             cache = None
             if sink:
@@ -295,6 +285,7 @@ class Engine:
         ids = torch.cat([query_ids, answer_ids], dim=1)
         n_ans = answer_ids.shape[1]
         logits = model(ids, past_key_values=cache, use_cache=True).logits
+        # rows that predict each answer token: last query position .. answer[-2]
         logits = logits[0, -n_ans - 1:-1].float()
         loss = torch.nn.functional.cross_entropy(logits, answer_ids[0],
                                                  reduction="mean")

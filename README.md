@@ -66,9 +66,11 @@ so there is no serving engine to adopt: if you can call `model.generate`, you
 can use this.
 
 **Requirement:** a *matched-KV pair* — same `num_key_value_heads` and same
-`head_dim`. Every dense Qwen3 model qualifies (8 KV heads × 128), as do the
-members of most other families. Layer counts may differ; that is the interesting
-part (28 → 36 here).
+`head_dim` in the two configs. Every dense Qwen3 model qualifies (8 KV heads ×
+128); Llama-3.1 8B and 70B match on paper but are untested here. Layer counts
+may differ — that is the interesting part (28 → 36 in the pair below).
+`fit_mapper` checks the geometry and refuses mismatched pairs rather than
+fitting something meaningless.
 
 ## Results
 
@@ -137,19 +139,24 @@ Two ways to read this, both true:
 
 ## Selecting k: the metric that lies
 
-The one result here that isn't in the paper.
+The paper validates attention-output cosine as a predictor of retention across
+pairs. What this repo adds is what happens *within* one pair when you use each
+metric to pick k — and the metric families disagree sharply.
 
-Six values of k were scored on four metric families. Fit R², calibration-domain
-NLL and off-domain WikiText perplexity all improve monotonically through k=24.
-Task accuracy does not — it plateaus at k=8 and is flat to k=24. Only
-**attention-output cosine** (how close the target's attention *outputs* are
-under the mapped vs real cache) peaks where accuracy peaks, at k=12.
+Six values of k, four metric families. Fit R², calibration-domain NLL and
+off-domain WikiText perplexity all improve monotonically through k=24. Task
+accuracy does not: it plateaus at k=8 and is flat to k=24. Only
+**attention-output cosine** — how close the target's attention *outputs* are
+under the mapped vs the real cache — peaks where accuracy peaks, at k=12.
 
-| metric | correlation with benchmark accuracy | on the plateau (k≥8) |
+| metric | correlation with benchmark accuracy | restricted to the plateau (k≥8) |
 |---|---:|---:|
 | attention-output cosine | +0.92 | +0.17 |
 | held-out NLL retention | +0.85 | −0.30 |
 | WikiText prefix perplexity | — | −0.24 |
+
+Correlations are over the six k values in the table above; the second column
+drops k=4, where every metric agrees.
 
 Past k=8 the perplexity-type metrics keep improving *while accuracy does not*,
 so they actively mislead: a mapper tuned on perplexity buys 3× the storage and

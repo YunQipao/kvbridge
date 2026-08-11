@@ -6,6 +6,8 @@
 
 **Prefill with the small model. Answer with the big one.**
 
+Main Idea: AI is big. Big is expensive. Small model cheap. Use small model where possible.
+
 A 1.7B model reads the prompt. A fitted linear map converts its KV cache into
 the format a 4B expects. The 4B then answers a document it never read — at 16K
 context that costs **290 ms instead of a 1270 ms prefill**, and keeps **83.7%**
@@ -63,8 +65,7 @@ family the relationship between two models' caches is close enough to **linear**
 that a per-layer ridge regression, fit once offline, can convert one into the
 other. A small model can then do the reading and a big model the answering.
 
-kvbridge is an independent implementation of that method — the paper ships no
-code — packaged as something you can actually call, plus a fitted mapper on the
+kvbridge is an independent implementation of that method  packaged as something you can actually call, plus a fitted mapper on the
 Hub and the measurements below. Everything runs on HuggingFace `DynamicCache`,
 so there is no serving engine to adopt: if you can call `model.generate`, you
 can use this.
@@ -141,36 +142,7 @@ Two ways to read this, both true:
   prefill + 290 ms of mapping = 858 ms vs 1270 ms. **1.48×**, and the crossover
   is around 8K — below that, cold-start mapping is not worth it.
 
-## Selecting k: the metric that lies
-
-The paper validates attention-output cosine as a predictor of retention across
-pairs. What this repo adds is what happens *within* one pair when you use each
-metric to pick k — and the metric families disagree sharply.
-
-Six values of k, four metric families. Fit R², calibration-domain NLL and
-off-domain WikiText perplexity all improve monotonically through k=24. Task
-accuracy does not: it plateaus at k=8 and is flat to k=24. Only
-**attention-output cosine** — how close the target's attention *outputs* are
-under the mapped vs the real cache — peaks where accuracy peaks, at k=12.
-
-| metric | correlation with benchmark accuracy | restricted to the plateau (k≥8) |
-|---|---:|---:|
-| attention-output cosine | +0.92 | +0.17 |
-| held-out NLL retention | +0.85 | −0.30 |
-| WikiText prefix perplexity | — | −0.24 |
-
-Correlations are over the six k values in the table above; the second column
-drops k=4, where every metric agrees.
-
-Past k=8 the perplexity-type metrics keep improving *while accuracy does not*,
-so they actively mislead: a mapper tuned on perplexity buys 3× the storage and
-2× the mapping latency for nothing a user would notice. Attention-output cosine
-costs one prefill to measure and picks the right k. If you fit your own pair,
-**tune on attention-output cosine or on task accuracy — not on R² or NLL.**
-
-`bench/` measures cosine for you (`--fidelity`).
-
-## Honest limits
+## Honestly it's not perfect...
 
 - **Mapping the whole prompt is not strictly better than just using the small
   model.** At k=12 the mapped 4B beats the 1.7B alone on HellaSwag (63.3 vs
@@ -190,6 +162,8 @@ costs one prefill to measure and picks the right k. If you fit your own pair,
   than a model, not free. k=8 is 1.2 GB and within noise on accuracy.
 - One pair is measured end to end. The paper reports 2 of 6 pairs degrading
   sharply; that failure mode is real and this repo has not reproduced it yet.
+  
+## But we can make it better :)
 
 ## Fit your own pair
 

@@ -1,4 +1,8 @@
-# kvbridge
+# kvbridge — transfer context between models, without the prefill
+
+[![tests](https://github.com/Sidd03192/kvbridge/actions/workflows/tests.yml/badge.svg)](https://github.com/Sidd03192/kvbridge/actions/workflows/tests.yml)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![mapper](https://img.shields.io/badge/%F0%9F%A4%97%20mapper-qwen3--1.7b%E2%86%924b-yellow)](https://huggingface.co/Siddharth85/kvbridge-qwen3-1.7b-to-qwen3-4b)
 
 **Prefill with the small model. Answer with the big one.**
 
@@ -294,6 +298,17 @@ results/        raw run JSONs + the script that generates the README tables
 examples/       runnable handoff demo
 tests/          unit tests (no model downloads, ~3 s)
 ```
+
+```bash
+pip install -e . pytest && pytest        # 27 tests, ~3 s, CPU only
+```
+
+The tests pin the invariants the numbers depend on: RoPE strip/apply are exact
+inverses and match the rotation `transformers` applies, the streaming ridge
+solve agrees with the direct solve and its moment-based R² with the residual
+one, `transfer` round-trips an identity mapper bit-for-bit, and saved mappers
+reload identically (with unknown format versions refused). CI runs them on
+Python 3.10 and 3.12.
 
 Reproducing the numbers needs a Modal account:
 

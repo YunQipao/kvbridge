@@ -10,6 +10,7 @@ from transformers import DynamicCache
 
 from .cache_compat import cache_layer_kv, cache_num_layers
 from .rope import apply_rope, strip_rope
+from .cachebridge import validate_head_assignment
 
 
 def transfer(cache, mapper, positions=None):
@@ -24,6 +25,10 @@ def transfer(cache, mapper, positions=None):
     (``Mapper.to`` is a no-op afterwards). Output dtype follows the source
     cache's dtype.
     """
+    method = mapper.meta.get("method")
+    if method not in (None, "full_head", "cachebridge",
+                      "arXiv:2608.03893 closed-form per-layer ridge, content-space keys"):
+        raise ValueError(f"unsupported mapper method: {method}")
     n_src = cache_num_layers(cache)
     k0, _ = cache_layer_kv(cache, 0)
     if k0.shape[0] != 1:
@@ -57,15 +62,40 @@ def transfer(cache, mapper, positions=None):
         src_V.append(v.transpose(0, 1).reshape(T, -1).to(compute_dtype))
 
     out = DynamicCache()
+    is_cachebridge = mapper.meta.get("method") == "cachebridge"
+    if is_cachebridge:
+        n_target_heads = int(mapper.meta.get("num_target_kv_heads", mapper.n_kv_heads))
+        assignment = validate_head_assignment(
+            mapper.meta.get("head_assignment"),
+            int(mapper.meta["num_source_kv_heads"]), n_target_heads)
+        if H != int(mapper.meta["num_source_kv_heads"]) or d != mapper.head_dim:
+            raise ValueError("source cache KV geometry does not match CacheBridge mapper")
+    else:
+        assignment = None
     for tl, entry in enumerate(mapper.layers):
         chosen = entry["source_layers"]
-        Xk = torch.cat([src_K[sl] for sl in chosen], dim=-1)
-        # centered affine map: (x - mu_x) @ W + mu_y
-        Yk = torch.addmm(entry["mu_yk"], Xk - entry["mu_xk"], entry["W_k"])
-        Xv = torch.cat([src_V[sl] for sl in chosen], dim=-1)
-        Yv = torch.addmm(entry["mu_yv"], Xv - entry["mu_xv"], entry["W_v"])
-        Kt = Yk.float().reshape(T, H, d).transpose(0, 1)         # [H, T, d]
-        Vt = Yv.float().reshape(T, H, d).transpose(0, 1)
+        if is_cachebridge:
+            # CacheBridge stores one compact affine map per target KV head:
+            # W_* [Ht, k*d, d], mu_x* [Ht, k*d], mu_y* [Ht, d].
+            Yks, Yvs = [], []
+            for h in range(n_target_heads):
+                sh = assignment[h]
+                Xk = torch.cat([src_K[sl].reshape(T, H, d)[:, sh, :] for sl in chosen], dim=-1)
+                Xv = torch.cat([src_V[sl].reshape(T, H, d)[:, sh, :] for sl in chosen], dim=-1)
+                Yks.append(torch.addmm(entry["mu_yk"][h],
+                                       Xk - entry["mu_xk"][h], entry["W_k"][h]))
+                Yvs.append(torch.addmm(entry["mu_yv"][h],
+                                       Xv - entry["mu_xv"][h], entry["W_v"][h]))
+            Kt = torch.stack(Yks, dim=1).float().transpose(0, 1)  # [H, T, d]
+            Vt = torch.stack(Yvs, dim=1).float().transpose(0, 1)
+        else:
+            Xk = torch.cat([src_K[sl] for sl in chosen], dim=-1)
+            # centered affine map: (x - mu_x) @ W + mu_y
+            Yk = torch.addmm(entry["mu_yk"], Xk - entry["mu_xk"], entry["W_k"])
+            Xv = torch.cat([src_V[sl] for sl in chosen], dim=-1)
+            Yv = torch.addmm(entry["mu_yv"], Xv - entry["mu_xv"], entry["W_v"])
+            Kt = Yk.float().reshape(T, H, d).transpose(0, 1)         # [H, T, d]
+            Vt = Yv.float().reshape(T, H, d).transpose(0, 1)
         Kt = apply_rope(Kt, positions, theta_t)
         out.update(Kt.to(out_dtype).unsqueeze(0), Vt.to(out_dtype).unsqueeze(0), tl)
     return out

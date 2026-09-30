@@ -35,17 +35,47 @@ class Mapper:
         missing = [k for k in _REQUIRED_META if k not in meta]
         if missing:
             raise ValueError(f"mapper meta missing required keys: {missing}")
+        if meta.get("method") == "cachebridge":
+            from .cachebridge import validate_head_assignment
+            required = ("source_model", "target_model", "num_source_layers",
+                        "num_target_layers", "num_source_kv_heads",
+                        "num_target_kv_heads", "head_assignment",
+                        "selected_source_layers", "ridge_lambda",
+                        "weighting_method", "token_stride", "num_boundaries",
+                        "boundary_start_token")
+            absent = [key for key in required if key not in meta]
+            if absent:
+                raise ValueError(f"CacheBridge mapper meta missing required keys: {absent}")
+            validate_head_assignment(meta["head_assignment"],
+                                     int(meta["num_source_kv_heads"]),
+                                     int(meta["num_target_kv_heads"]))
+            if len(layers) != int(meta["num_target_layers"]):
+                raise ValueError("CacheBridge target layer count mismatch")
+            if len(meta["selected_source_layers"]) != len(layers):
+                raise ValueError("CacheBridge selected source layer count mismatch")
+            for index, entry in enumerate(layers):
+                selected = meta["selected_source_layers"][index]
+                if entry["source_layers"] != selected:
+                    raise ValueError("CacheBridge selected source layers do not match tensors")
+                p = len(selected) * int(meta["head_dim"])
+                h = int(meta["num_target_kv_heads"])
+                d = int(meta["head_dim"])
+                for key, shape in (("W_k", (h, p, d)), ("W_v", (h, p, d)),
+                                   ("mu_xk", (h, p)), ("mu_xv", (h, p)),
+                                   ("mu_yk", (h, d)), ("mu_yv", (h, d))):
+                    if tuple(entry[key].shape) != shape or not torch.isfinite(entry[key]).all():
+                        raise ValueError(f"CacheBridge invalid shape or nonfinite {key}")
         self.layers = layers
         self.meta = dict(meta)
 
     # ---- convenience accessors ----
     @property
     def source(self):
-        return self.meta["source"]
+        return self.meta.get("source", self.meta.get("source_model"))
 
     @property
     def target(self):
-        return self.meta["target"]
+        return self.meta.get("target", self.meta.get("target_model"))
 
     @property
     def n_kv_heads(self):
@@ -96,8 +126,9 @@ class Mapper:
                 tensors[f"layer_{i:02d}.{key}"] = (
                     entry[key].detach().to("cpu", dtype).contiguous())
         save_file(tensors, str(path / "mapper.safetensors"))
+        format_version = 2 if self.meta.get("method") == "cachebridge" else self.FORMAT_VERSION
         meta = {**self.meta,
-                "format_version": self.FORMAT_VERSION,
+                "format_version": format_version,
                 "n_target_layers": len(self.layers),
                 "source_layers": [
                     [int(s) for s in entry["source_layers"]] for entry in self.layers],
@@ -111,9 +142,10 @@ class Mapper:
         with open(json_path) as f:
             meta = json.load(f)
         version = meta.get("format_version")
-        if version != cls.FORMAT_VERSION:
+        if version not in (cls.FORMAT_VERSION, 2) or (
+                version == 2 and meta.get("method") != "cachebridge"):
             raise ValueError(f"unsupported mapper format_version={version} "
-                             f"(this kvbridge reads version {cls.FORMAT_VERSION})")
+                             f"(this kvbridge reads versions {cls.FORMAT_VERSION} and 2)")
         tensors = load_file(str(safetensors_path), device=str(device))
         layers = []
         for i in range(meta["n_target_layers"]):

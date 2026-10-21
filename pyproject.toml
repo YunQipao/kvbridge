@@ -38,5 +38,6 @@ build-backend = "hatchling.build"
 packages = ["kvbridge"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = ["integration: needs model downloads and real hardware; deselected by default"]
 addopts = "-m 'not integration'"

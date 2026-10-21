@@ -37,15 +37,50 @@ def validate_head_assignment(assignment, n_source_heads, n_target_heads):
     return assignment
 
 
+def validate_head_map(head_map, n_source_heads, n_target_heads, *, mode="matched"):
+    """Validate target-KV-head -> ordered source-KV-head blocks."""
+    if head_map is None:
+        from .geometry import build_head_map
+        head_map = build_head_map(n_source_heads, n_target_heads, mode)
+    if len(head_map) != int(n_target_heads) or not all(head_map):
+        raise ValueError("head_map must contain one non-empty list per target head")
+    normalized = []
+    for block in head_map:
+        block = [int(x) for x in block]
+        if any(x < 0 or x >= int(n_source_heads) for x in block):
+            raise ValueError("head_map contains an invalid source KV head")
+        normalized.append(block)
+    if mode == "matched" and any(len(block) != 1 for block in normalized):
+        raise ValueError("matched mode requires one source head per target head")
+    if mode == "block":
+        flattened = [head for block in normalized for head in block]
+        if flattened != list(range(int(n_source_heads))):
+            raise ValueError("block mode requires a contiguous, non-overlapping source-head partition")
+    return normalized
+
+
+def normalize_head_assignment(assignment, n_source_heads, n_target_heads):
+    """Read legacy flat assignments or contiguous grouped assignments as blocks."""
+    if assignment is not None and any(isinstance(x, (list, tuple)) for x in assignment):
+        if not all(isinstance(x, (list, tuple)) for x in assignment):
+            raise ValueError("head_assignment cannot mix scalar heads and groups")
+        blocks = validate_head_map(assignment, n_source_heads, n_target_heads,
+                                   mode="block")
+        if len({len(block) for block in blocks}) != 1:
+            raise ValueError("grouped assignment requires equal group sizes")
+        return blocks
+    return [[head] for head in validate_head_assignment(
+        assignment, n_source_heads, n_target_heads)]
+
+
 def build_head_local_features(source_kv, selected_source_layers,
                               target_head, head_assignment=None,
-                              n_target_heads=None):
+                              n_target_heads=None, head_map=None):
     """Gather one target head's head-local feature block.
 
     ``source_kv`` must have shape ``[Ls, N, Hs, D]``.  The returned tensor has
-    shape ``[N, len(selected_source_layers) * D]`` and concatenates layers in
-    the supplied order.  Only the source head assigned to ``target_head`` is
-    read from each layer.
+    shape ``[N, len(selected_source_layers) * block_width * D]``. Features
+    concatenate layers in supplied order, then heads in their mapped order.
     """
     if source_kv.ndim != 4:
         raise ValueError("source_kv must have shape [layers, observations, heads, dim]")
@@ -56,14 +91,20 @@ def build_head_local_features(source_kv, selected_source_layers,
     if any(x < 0 or x >= n_layers for x in selected):
         raise ValueError("selected_source_layers contains an invalid layer")
     if n_target_heads is None:
-        n_target_heads = len(head_assignment) if head_assignment is not None else n_source_heads
-    assignment = validate_head_assignment(
-        head_assignment, n_source_heads, int(n_target_heads))
+        n_target_heads = (len(head_map) if head_map is not None else
+                          len(head_assignment) if head_assignment is not None else n_source_heads)
+    if head_map is None:
+        blocks = normalize_head_assignment(head_assignment, n_source_heads, int(n_target_heads))
+    else:
+        blocks = validate_head_map(
+            head_map, n_source_heads, int(n_target_heads),
+            mode="block" if any(len(block) > 1 for block in head_map) else "matched")
     target_head = int(target_head)
-    if target_head < 0 or target_head >= len(assignment):
+    if target_head < 0 or target_head >= len(blocks):
         raise ValueError("target_head is out of range")
-    source_head = assignment[target_head]
-    return torch.cat([source_kv[layer, :, source_head, :] for layer in selected], dim=-1)
+    source_heads = blocks[target_head]
+    return torch.cat([source_kv[layer, :, source_heads, :].reshape(source_kv.shape[1], -1)
+                      for layer in selected], dim=-1)
 
 
 def _validate_regression_inputs(X, Y, weights):
@@ -218,6 +259,115 @@ def compute_key_sensitivity(attention_probs, q, v, attention_output,
     return (probs.square() * q_factor * distance).sum(dim=2)
 
 
+def compute_gqa_sensitivities(attention_probs, q, v, attention_output=None,
+                              *, query_to_kv=None, valid_mask=None,
+                              causal_mask=None):
+    """Compute Eq. (15)-(16) for grouped-query attention.
+
+    Layouts are explicit: probabilities ``[B,Hq,Tq,Tk]``, query ``[B,Hq,Tq,D]``,
+    values ``[B,Hkv,Tk,D]``.  ``query_to_kv[u]`` selects the KV head owned by
+    query head ``u``.  If omitted, an integral contiguous GQA grouping is used.
+    The returned tensors are ``[B,Hkv,Tk]`` and sum the query-head
+    sensitivities belonging to each KV head, exactly as in the paper.
+    """
+    if attention_probs.ndim != 4 or q.ndim != 4 or v.ndim != 4:
+        raise ValueError("GQA tensors must have layouts [B,H,T,D] and [B,H,Tq,Tk]")
+    B, hq, tq, tk = attention_probs.shape
+    if q.shape[:3] != (B, hq, tq) or q.shape[-1] != v.shape[-1]:
+        raise ValueError("query and probability dimensions do not match")
+    if v.shape[:3] != (B, v.shape[1], tk):
+        raise ValueError("value tensor does not match attention key length")
+    hkv = v.shape[1]
+    if query_to_kv is None:
+        if hq % hkv:
+            raise ValueError("query heads must be divisible by KV heads")
+        group = hq // hkv
+        query_to_kv = [u // group for u in range(hq)]
+    query_to_kv = [int(x) for x in query_to_kv]
+    if len(query_to_kv) != hq or any(x < 0 or x >= hkv for x in query_to_kv):
+        raise ValueError("invalid query_to_kv assignment")
+    if attention_output is None:
+        expanded_v = v[:, torch.as_tensor(query_to_kv, device=v.device)]
+        mask = _attention_mask(attention_probs, valid_mask, causal_mask)
+        attention_output = torch.matmul(attention_probs.masked_fill(~mask, 0), expanded_v)
+    if attention_output.shape != (B, hq, tq, v.shape[-1]):
+        raise ValueError("attention_output must have shape [B,Hq,Tq,D]")
+    if causal_mask is None:
+        raise ValueError("causal_mask is required to exclude invisible positions")
+    mask = _attention_mask(attention_probs, valid_mask, causal_mask)
+    probs = attention_probs.masked_fill(~mask, 0)
+    q_factor = q.square().sum(dim=-1).div(q.shape[-1])
+    expanded_v = v[:, torch.as_tensor(query_to_kv, device=v.device)]
+    wk_per_query = compute_key_sensitivity(
+        probs, q, expanded_v, attention_output,
+        valid_mask=None, causal_mask=torch.ones_like(mask, dtype=torch.bool))
+    wv_per_query = compute_value_sensitivity(
+        probs, q, expanded_v, attention_output,
+        valid_mask=None, causal_mask=torch.ones_like(mask, dtype=torch.bool))
+    # The helper above uses the already-masked probabilities. Its output is
+    # intentionally retained as a transparent reference implementation.
+    wk = torch.zeros(B, hkv, tk, dtype=wk_per_query.dtype, device=wk_per_query.device)
+    wv = torch.zeros_like(wk)
+    for u, h in enumerate(query_to_kv):
+        wk[:, h] += wk_per_query[:, u]
+        wv[:, h] += wv_per_query[:, u]
+    return wk, wv
+
+
+def fit_head_local_streaming(source_batches, target_batches, selected_source_layers,
+                              *, head_assignment, num_target_layers,
+                              ridge_lambda=0.01, weights_k=None, weights_v=None,
+                              stats_device="cpu"):
+    """Fit compact K/V maps from bounded batches.
+
+    Each batch is ``(source_layers, target_layers)`` where source/target are
+    lists of ``[N,H,D]`` tensors.  Only the current batch is materialized;
+    each target-layer/head/component owns a streaming sufficient-statistics
+    accumulator.  This is the reference ``fit-backend=torch`` path.
+    """
+    if not source_batches:
+        raise ValueError("source_batches must not be empty")
+    first_source = source_batches[0]
+    first_target = target_batches[0]
+    hs = first_source[0].shape[1]
+    ht = first_target[0].shape[1]
+    d = first_source[0].shape[2]
+    assignment = validate_head_assignment(head_assignment, hs, ht)
+    selected = [[int(x) for x in row] for row in selected_source_layers]
+    if len(selected) != num_target_layers:
+        raise ValueError("selected_source_layers must match target layer count")
+    stats = {}
+    for layer in range(num_target_layers):
+        p = len(selected[layer]) * d
+        stats[layer] = [
+            {"k": WeightedRidgeStats(p, d, device=stats_device),
+             "v": WeightedRidgeStats(p, d, device=stats_device)}
+            for _ in range(ht)
+        ]
+    for batch_index, (src, tgt) in enumerate(zip(source_batches, target_batches)):
+        n = src[0].shape[0]
+        wk = weights_k[batch_index] if weights_k is not None else torch.ones(n)
+        wv = weights_v[batch_index] if weights_v is not None else torch.ones(n)
+        for layer in range(num_target_layers):
+            for h in range(ht):
+                sh = assignment[h]
+                xk = torch.cat([src[sl][:, sh, :] for sl in selected[layer]], dim=-1)
+                xv = xk
+                stats[layer][h]["k"].add_batch(xk, tgt[layer][:, h, :], wk)
+                stats[layer][h]["v"].add_batch(xv, tgt[layer][:, h, :], wv)
+    fitted = []
+    for layer in range(num_target_layers):
+        entries = {"source_layers": selected[layer]}
+        for name, suffix in (("k", "k"), ("v", "v")):
+            solved = [stats[layer][h][name].finalize(ridge_lambda)
+                      for h in range(ht)]
+            entries[f"W_{suffix}"] = torch.stack([item[0] for item in solved])
+            entries[f"mu_x{suffix}"] = torch.stack([item[2] for item in solved])
+            entries[f"mu_y{suffix}"] = torch.stack([item[3] for item in solved])
+        fitted.append(entries)
+    return fitted
+
+
 def repair_weights(raw_sensitivity, feature_width, valid_mask=None):
     """Eq. (17)-(19): per-row mean-one weights with a Kish-ESS floor.
 
@@ -247,6 +397,37 @@ def repair_weights(raw_sensitivity, feature_width, valid_mask=None):
                         ((n / tau - 1) / cv2.clamp_min(1e-300)).clamp(min=0).sqrt().clamp(max=1),
                         torch.ones_like(cv2))
     return ((1 + alpha * (normalized - 1)) * mask).to(raw_sensitivity.dtype)
+
+
+def aggregate_boundary_sensitivities(raw_sensitivities, feature_width,
+                                     valid_mask=None):
+    """Implement the paper's per-boundary normalization before Eq.17.
+
+    ``raw_sensitivities`` has layout ``[..., num_boundaries, observations]``.
+    Every boundary is normalized to unit mass over eligible observations,
+    boundaries are averaged with equal mass, and the ESS repair is applied to
+    the resulting observation weights.  This helper is model-agnostic; model
+    instrumentation must construct one raw sensitivity vector per boundary.
+    """
+    if raw_sensitivities.ndim < 2:
+        raise ValueError("expected [..., boundaries, observations]")
+    if not torch.isfinite(raw_sensitivities).all() or (raw_sensitivities < 0).any():
+        raise ValueError("sensitivities must be finite and non-negative")
+    if valid_mask is None:
+        mask = torch.ones_like(raw_sensitivities, dtype=torch.bool)
+    else:
+        mask = torch.broadcast_to(valid_mask.bool(), raw_sensitivities.shape)
+    mass = (raw_sensitivities * mask).sum(dim=-1, keepdim=True)
+    normalized = torch.where(
+        mass > 0,
+        raw_sensitivities / mass.clamp_min(torch.finfo(raw_sensitivities.dtype).tiny),
+        torch.zeros_like(raw_sensitivities),
+    )
+    normalized = normalized * mask
+    combined = normalized.mean(dim=-2)
+    combined = combined / combined.sum(dim=-1, keepdim=True).clamp_min(
+        torch.finfo(combined.dtype).tiny)
+    return repair_weights(combined, feature_width, valid_mask=mask.any(dim=-2))
 
 
 def make_log_causal_boundaries(seq_len, num_boundaries=32, start_token=12):
@@ -299,15 +480,23 @@ def cachebridge_metadata(*, source_model, target_model, num_source_layers,
                          selected_source_layers, rope_theta_source,
                          rope_theta_target, ridge_lambda=0.01,
                          weighting_method="attn_repair", token_stride=4,
-                         num_boundaries=32, boundary_start_token=12):
+                         num_boundaries=32, boundary_start_token=12,
+                         head_map=None, head_map_mode="auto"):
     """Build the minimal serializable CacheBridge metadata schema."""
-    assignment = validate_head_assignment(
+    blocks = normalize_head_assignment(
         head_assignment, int(num_source_kv_heads), int(num_target_kv_heads))
+    from .geometry import build_head_map
+    if head_map_mode == "auto":
+        head_map_mode = "matched" if num_source_kv_heads == num_target_kv_heads else "block"
+    if head_map is None:
+        head_map = (blocks if head_map_mode == "matched"
+                    else build_head_map(num_source_kv_heads, num_target_kv_heads,
+                                        head_map_mode))
+    head_map = validate_head_map(head_map, num_source_kv_heads,
+                                 num_target_kv_heads, mode=head_map_mode)
     return {
         "method": "cachebridge",
         "format_version": 2,
-        "source_model": source_model,
-        "target_model": target_model,
         "source": source_model,
         "target": target_model,
         "num_source_layers": int(num_source_layers),
@@ -316,7 +505,11 @@ def cachebridge_metadata(*, source_model, target_model, num_source_layers,
         "num_target_kv_heads": int(num_target_kv_heads),
         "n_kv_heads": int(num_target_kv_heads),
         "head_dim": int(head_dim),
-        "head_assignment": assignment,
+        "head_assignment": head_map if any(len(b) > 1 for b in head_map) else [b[0] for b in head_map],
+        "head_map": head_map,
+        "head_map_mode": head_map_mode,
+        "assignment_mode": "grouped_contiguous" if any(len(b) > 1 for b in head_map) else "matched",
+        "group_size": len(head_map[0]),
         "selected_source_layers": [[int(x) for x in row]
                                     for row in selected_source_layers],
         "ridge_lambda": float(ridge_lambda),
@@ -325,6 +518,12 @@ def cachebridge_metadata(*, source_model, target_model, num_source_layers,
         "token_stride": int(token_stride),
         "num_boundaries": int(num_boundaries),
         "boundary_start_token": int(boundary_start_token),
+        "tau_rule": "min(n, 2p)",
+        "calibration_dataset": None,
+        "n_calibration": None,
+        "calibration_length": None,
+        "source_revision": None,
+        "target_revision": None,
         "rope_theta_source": float(rope_theta_source),
         "rope_theta_target": float(rope_theta_target),
     }

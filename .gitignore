@@ -17,3 +17,10 @@ plan/
 *_backup.py
 paper.md
 *.pdf
+.distkv_gpu_queue.lock
+artifacts/
+logs/
+*.tar.gz
+*.pyc
+.pytest_cache/
+results/

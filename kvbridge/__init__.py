@@ -12,9 +12,19 @@ the prompt. Implementation of arXiv:2608.03893 (Heo et al., NVIDIA).
     big.generate(input_ids=prompt_ids, past_key_values=big_cache, ...)
 """
 
-from .fit import fit_mapper
-from .mapper import Mapper
-from .transfer import transfer
-
 __version__ = "0.1.0"
 __all__ = ["Mapper", "fit_mapper", "transfer", "__version__"]
+
+
+def __getattr__(name):
+    """Load tensor-heavy public APIs only when they are requested."""
+    if name == "fit_mapper":
+        from .fit import fit_mapper
+        return fit_mapper
+    if name == "Mapper":
+        from .mapper import Mapper
+        return Mapper
+    if name == "transfer":
+        from .transfer import transfer
+        return transfer
+    raise AttributeError(name)

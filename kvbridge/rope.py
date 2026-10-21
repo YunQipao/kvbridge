@@ -2,16 +2,45 @@
 
 The KV cache stores position-rotated keys. kvbridge maps keys in "content
 space" (rotation removed), so a mapper fit at one context length stays valid
-at any position the target's RoPE supports (paper section 3.3). RoPE rotations
-are orthogonal, so stripping is exact up to float error.
+at any position the target's RoPE supports (paper section 3.3). YaRN's native
+amplitude scaling is included in both the forward transform and its inverse.
 """
 
 import torch
+from .geometry import text_config
+
+
+def rope_spec(config):
+    """Persist the complete Ministral text config for native YaRN reconstruction."""
+    config = text_config(config)
+    if getattr(config, "model_type", None) == "ministral3":
+        return config.to_dict()
+    return get_rope_theta(config)
+
+
+def native_cos_sin(positions, head_dim, spec, device, dtype):
+    if not isinstance(spec, dict):
+        return build_cos_sin(positions, head_dim, spec, device, dtype)
+    from transformers import AutoConfig
+    from transformers.models.ministral3.modeling_ministral3 import Ministral3RotaryEmbedding
+    values = dict(spec)
+    model_type = values.pop("model_type")
+    if model_type != "ministral3":
+        raise ValueError(f"unsupported native rotary config: {model_type}")
+    config = AutoConfig.for_model(model_type, **values)
+    if config.head_dim != head_dim:
+        raise ValueError("rotary config head_dim does not match cache")
+    rotary = Ministral3RotaryEmbedding(config).to(device)
+    x = torch.empty(1, positions.numel(), head_dim, device=device, dtype=dtype)
+    with torch.no_grad():
+        cos, sin = rotary(x, positions.to(device)[None])
+    return cos[0], sin[0]
 
 
 def get_rope_theta(config) -> float:
     """Read rope_theta from a HF config across transformers versions
     (it moved under ``config.rope_parameters`` in >= 4.57)."""
+    config = text_config(config)
     theta = getattr(config, "rope_theta", None)
     if theta is not None:
         return float(theta)
@@ -40,11 +69,15 @@ def rotate_half(x):
 
 def strip_rope(k, positions, rope_theta):
     """Inverse RoPE. k: [H, T, d] post-rotation keys -> content space."""
-    cos, sin = build_cos_sin(positions, k.shape[-1], rope_theta, k.device, k.dtype)
-    return k * cos[None] - rotate_half(k) * sin[None]
+    cos, sin = native_cos_sin(positions, k.shape[-1], rope_theta, k.device, k.dtype)
+    result = k * cos[None] - rotate_half(k) * sin[None]
+    # YaRN may scale both cos and sin: the inverse is not just the transpose.
+    if isinstance(rope_theta, dict):
+        result = result / (cos.square() + sin.square())[None]
+    return result
 
 
 def apply_rope(k, positions, rope_theta):
     """Forward RoPE. k: [H, T, d] content-space keys -> rotated."""
-    cos, sin = build_cos_sin(positions, k.shape[-1], rope_theta, k.device, k.dtype)
+    cos, sin = native_cos_sin(positions, k.shape[-1], rope_theta, k.device, k.dtype)
     return k * cos[None] + rotate_half(k) * sin[None]

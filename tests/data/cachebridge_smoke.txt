@@ -1,0 +1,3 @@
+CacheBridge smoke calibration text. The system transfers a compatible key value cache between language models.
+
+The small model reads this short document, and the target model receives a mapped cache before continuation.

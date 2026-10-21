@@ -23,6 +23,34 @@ _REQUIRED_META = ("source", "target", "n_kv_heads", "head_dim",
                   "rope_theta_source", "rope_theta_target")
 
 
+def normalize_mapper_meta(meta):
+    """Return metadata with the canonical model-pair keys.
+
+    Older artifacts used ``source_model``/``target_model``. Canonical fields
+    take precedence when both are present; aliases are removed so re-saving
+    a legacy artifact also emits only the canonical model-pair fields.
+    """
+    normalized = dict(meta)
+    if "source" not in normalized and "source_model" in normalized:
+        normalized["source"] = normalized["source_model"]
+    if "target" not in normalized and "target_model" in normalized:
+        normalized["target"] = normalized["target_model"]
+    normalized.pop("source_model", None)
+    normalized.pop("target_model", None)
+    if (normalized.get("method") in ("cachebridge", "head_local")
+            and all(key in normalized for key in
+                    ("head_assignment", "num_source_kv_heads", "num_target_kv_heads"))):
+        from .cachebridge import normalize_head_assignment
+        blocks = normalize_head_assignment(normalized["head_assignment"],
+            int(normalized["num_source_kv_heads"]), int(normalized["num_target_kv_heads"]))
+        grouped = any(len(block) > 1 for block in blocks)
+        if grouped and "head_map" in normalized and normalized["head_map"] != blocks:
+            raise ValueError("head_assignment and head_map disagree")
+        normalized.setdefault("head_map", blocks)
+        normalized.setdefault("head_map_mode", "block" if grouped else "matched")
+    return normalized
+
+
 class Mapper:
     """Holds ``layers`` (list of dicts: ``source_layers`` + the six tensors
     per target layer) and ``meta`` (JSON-safe dict). ``to()`` follows
@@ -32,12 +60,13 @@ class Mapper:
     FORMAT_VERSION = 1
 
     def __init__(self, layers, meta):
+        meta = normalize_mapper_meta(meta)
         missing = [k for k in _REQUIRED_META if k not in meta]
         if missing:
             raise ValueError(f"mapper meta missing required keys: {missing}")
-        if meta.get("method") == "cachebridge":
-            from .cachebridge import validate_head_assignment
-            required = ("source_model", "target_model", "num_source_layers",
+        if meta.get("method") in ("cachebridge", "head_local"):
+            from .cachebridge import normalize_head_assignment, validate_head_map
+            required = ("source", "target", "num_source_layers",
                         "num_target_layers", "num_source_kv_heads",
                         "num_target_kv_heads", "head_assignment",
                         "selected_source_layers", "ridge_lambda",
@@ -46,9 +75,17 @@ class Mapper:
             absent = [key for key in required if key not in meta]
             if absent:
                 raise ValueError(f"CacheBridge mapper meta missing required keys: {absent}")
-            validate_head_assignment(meta["head_assignment"],
+            normalize_head_assignment(meta["head_assignment"],
                                      int(meta["num_source_kv_heads"]),
                                      int(meta["num_target_kv_heads"]))
+            meta.setdefault("head_map", [[x] for x in meta["head_assignment"]])
+            meta.setdefault("head_map_mode", "matched")
+            validate_head_map(meta["head_map"], int(meta["num_source_kv_heads"]),
+                              int(meta["num_target_kv_heads"]), mode=meta["head_map_mode"])
+            block_widths = {len(block) for block in meta["head_map"]}
+            if len(block_widths) != 1:
+                raise ValueError("stacked mapper tensors require equal head-map block widths")
+            block_width = next(iter(block_widths))
             if len(layers) != int(meta["num_target_layers"]):
                 raise ValueError("CacheBridge target layer count mismatch")
             if len(meta["selected_source_layers"]) != len(layers):
@@ -57,7 +94,7 @@ class Mapper:
                 selected = meta["selected_source_layers"][index]
                 if entry["source_layers"] != selected:
                     raise ValueError("CacheBridge selected source layers do not match tensors")
-                p = len(selected) * int(meta["head_dim"])
+                p = len(selected) * block_width * int(meta["head_dim"])
                 h = int(meta["num_target_kv_heads"])
                 d = int(meta["head_dim"])
                 for key, shape in (("W_k", (h, p, d)), ("W_v", (h, p, d)),
@@ -65,17 +102,39 @@ class Mapper:
                                    ("mu_yk", (h, d)), ("mu_yv", (h, d))):
                     if tuple(entry[key].shape) != shape or not torch.isfinite(entry[key]).all():
                         raise ValueError(f"CacheBridge invalid shape or nonfinite {key}")
+        elif meta.get("method") == "full_head":
+            required = ("source", "target", "num_source_layers",
+                        "num_target_layers", "num_source_kv_heads",
+                        "num_target_kv_heads", "head_dim",
+                        "selected_source_layers", "ridge_lambda",
+                        "weighting_method")
+            absent = [key for key in required if key not in meta]
+            if absent:
+                raise ValueError(f"Full-Head mapper meta missing required keys: {absent}")
+            if meta.get("weighting_method") != "uniform":
+                raise ValueError("Full-Head mapper must declare weighting_method=uniform")
+            h, d = int(meta["num_target_kv_heads"]), int(meta["head_dim"])
+            for index, entry in enumerate(layers):
+                selected = meta["selected_source_layers"][index]
+                if entry["source_layers"] != selected:
+                    raise ValueError("Full-Head selected source layers do not match tensors")
+                p = len(selected) * int(meta["num_source_kv_heads"]) * d
+                for key, shape in (("W_k", (h, p, d)), ("W_v", (h, p, d)),
+                                   ("mu_xk", (h, p)), ("mu_xv", (h, p)),
+                                   ("mu_yk", (h, d)), ("mu_yv", (h, d))):
+                    if tuple(entry[key].shape) != shape or not torch.isfinite(entry[key]).all():
+                        raise ValueError(f"Full-Head invalid shape or nonfinite {key}")
         self.layers = layers
         self.meta = dict(meta)
 
     # ---- convenience accessors ----
     @property
     def source(self):
-        return self.meta.get("source", self.meta.get("source_model"))
+        return self.meta["source"]
 
     @property
     def target(self):
-        return self.meta.get("target", self.meta.get("target_model"))
+        return self.meta["target"]
 
     @property
     def n_kv_heads(self):
@@ -126,8 +185,9 @@ class Mapper:
                 tensors[f"layer_{i:02d}.{key}"] = (
                     entry[key].detach().to("cpu", dtype).contiguous())
         save_file(tensors, str(path / "mapper.safetensors"))
-        format_version = 2 if self.meta.get("method") == "cachebridge" else self.FORMAT_VERSION
-        meta = {**self.meta,
+        format_version = 2 if self.meta.get("method") in ("cachebridge", "head_local") else self.FORMAT_VERSION
+        meta = normalize_mapper_meta(self.meta)
+        meta = {**meta,
                 "format_version": format_version,
                 "n_target_layers": len(self.layers),
                 "source_layers": [
@@ -140,10 +200,10 @@ class Mapper:
     @classmethod
     def _from_files(cls, json_path, safetensors_path, device="cpu", dtype=None):
         with open(json_path) as f:
-            meta = json.load(f)
+            meta = normalize_mapper_meta(json.load(f))
         version = meta.get("format_version")
         if version not in (cls.FORMAT_VERSION, 2) or (
-                version == 2 and meta.get("method") != "cachebridge"):
+            version == 2 and meta.get("method") not in ("cachebridge", "head_local")):
             raise ValueError(f"unsupported mapper format_version={version} "
                              f"(this kvbridge reads versions {cls.FORMAT_VERSION} and 2)")
         tensors = load_file(str(safetensors_path), device=str(device))
